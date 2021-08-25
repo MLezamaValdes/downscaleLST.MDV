@@ -1,0 +1,171 @@
+---
+title: "ex"
+author: "Maite"
+date: "13 7 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+library(raster)
+library(lubridate)
+library(solrad)
+library(downscaleLST.MDV)
+
+##########  load the model ###############################################
+load(system.file("final_model_downscaling_LST_MDV.RData", package = "downscaleLST.MDV"))
+
+
+# ########  these are the  full size example rasters ###############################
+# 
+# slope <- raster(system.file("30m_slopeMDV.tif", package = "downscaleLST.MDV"))
+# aspect <- raster(system.file("30m_aspectMDV.tif", package = "downscaleLST.MDV"))
+# template <- raster(system.file("template.grd", package = "downscaleLST.MDV"))
+# aux <- stack(system.file("auxData.grd", package = "downscaleLST.MDV"))
+# Mbilin <- raster(system.file("MYD11_L2.A2018316.1350.006.2_bilin.grd", package = "downscaleLST.MDV"))
+# Mngb <- raster(system.file("MYD11_L2.A2018316.1350.006.2_ngb.grd", package = "downscaleLST.MDV"))
+# L <- raster(system.file("LC08_L1GT_225129_20181112_20181127_01_T2.2.grd", package = "downscaleLST.MDV"))
+
+
+##########  make ia and put into one list  ###############################
+
+
+exdate <- as.POSIXct("2013-11-12 17:00:00", tz="UTC")
+
+
+toget <- c("slope", "aspect", "template",
+                  "aux", "ia", "Mngb", "Mbilin", "L")
+
+ex1 <- lapply(seq(toget), function(i){
+  f <- list.files(system.file(package = "downscaleLST.MDV"),
+                  pattern=paste0(toget[i], ".grd"), full.names = T)
+  fc <- f[grep("ex_1", f)]
+  stack(fc)
+})
+names(ex1) <- toget
+
+ia <- make_ia(M_date = exdate, outdir = here::here("ex_output"), 
+                     sl=ex1$slope, as=ex1$aspect)
+ex1 <- stack(ex1, ia$ia)
+
+
+
+
+ex2 <- lapply(seq(toget), function(i){
+  f <- list.files(system.file(package = "downscaleLST.MDV"),
+                  pattern=paste0(toget[i], ".grd"), full.names = T)
+  fc <- f[grep("ex_2", f)]
+  stack(fc)
+})
+names(ex2) <- toget
+
+ia <- make_ia(M_date = exdate, outdir = here::here("ex_output"), 
+                     sl=ex2$slope, as=ex2$aspect)
+ex2 <- stack(ex2, ia)
+
+dsc_ex1 <- downscaleFun(MOD=ex1$Mbilin, aux=ex1$aux, ia=ex1$ia, 
+                         template=ex1$template, modname="MYD11_L2.A2018316.1350.006")
+
+dsc_ex2 <- downscaleFun(MOD=ex2$Mbilin, aux=ex2$aux, ia=ex2$ia, 
+                         template=ex2$template, modname="MYD11_L2.A2018316.1350.006")
+
+#### TO DO: GET LANDSAT 
+comp_ex1 <- stack(ex1$L, dsc_ex1, ex1$Mbilin, ex1$Mngb)
+spplot(comp_ex1)
+
+comp_ex2 <- stack(ex2$L, dsc_ex2, ex2$Mbilin, ex2$Mngb)
+
+library(rasterVis)
+library(sf)
+
+
+  exp <- gplot(plotstack)+
+    geom_tile(aes(fill = value)) +
+    facet_wrap(~ variable) +
+    ggtitle("a")+
+    scale_fill_gradientn(colours = viridis(100), 
+                         na.value = "white",
+                         name="LST (?C)") +
+    coord_equal()+
+    theme_minimal()+
+    
+    theme(strip.background =element_rect(fill="gray56"),
+          strip.text = element_text(colour = "white"),
+            axis.text = element_text(size=7))
+  
+  
+  expboxes <- exp + 
+    geom_polygon(data = data.frame(x = c(419639.7, 419639.7,  435980.8,  435980.8), #e1
+                                                   y = c(-1330038, -1310686, -1310686, -1330038 )),
+                         aes(x = x, y = y), colour = "firebrick3", fill=NA, size = 1)+
+    geom_polygon(data = data.frame(x = c(414049.3, 414049.3,   430820.4 ,   430820.4 ), #e2
+                                   y = c(-1275424 , -1256933 , -1256933 , -1275424  )),
+                   aes(x = x, y = y), colour = "navy",  fill=NA, size = 1)
+  
+  
+
+  # ggsave(paste0(figurepath, "spatial_improvement_", prednam,".png"),
+  #        plot = expboxes, dpi=300, width = 20, height=15, units = "cm")
+  
+  # plot(plotstack[[1]])
+
+  exps2 <- gplot(plotstack_small_2)+
+    geom_tile(aes(fill = value)) +
+    facet_wrap(~ variable) +
+    ggtitle("c")+
+    scale_fill_gradientn(colours = viridis(100), 
+                         na.value = "white",
+                         name="LST (?C)") +    coord_equal()+
+    theme_minimal()+
+    theme(strip.background =element_rect(fill="navy"),
+          strip.text = element_text(colour = "white"),
+          axis.text = element_text(size=7))
+  
+  exps2
+  
+  # ggsave(paste0(figurepath, "spatial_improvement_", prednam,"small_extent_2.png"),
+  #        plot = exps2, dpi=300, width = 20, height=15, units = "cm")
+  
+  
+  e1 <- c( 419639.7, 435980.8 , -1330038, -1310686 )
+  plotstack_small_1 <- crop(plotstack, e1)
+  names(plotstack_small_1) <- c("Landsat", "downscaled_MODIS", "MODIS")
+  
+  
+  exps <- gplot(plotstack_small_1)+
+    geom_tile(aes(fill = value)) +
+    facet_wrap(~ variable) +
+    theme_minimal()+
+    ggtitle("b")+
+    scale_fill_gradientn(colours = viridis(100), 
+                         na.value = "white",
+                         name="LST (?C)") +    
+    coord_equal() +
+    theme(strip.background =element_rect(fill="firebrick3"),
+          strip.text = element_text(colour = "white"),
+          axis.text = element_text(size=7))
+    
+  # exps
+  # 
+  # ggsave(paste0(figurepath, "spatial_improvement_", prednam,"small_extent_1.png"),
+  #        plot = exps,dpi=300, width = 20, height=15, units = "cm")
+  
+  plotlist <- list(expboxes, exps, exps2)
+
+  png(paste0(figurepath, "spatial_improvement_", prednam,"full_figure.png"),
+      width = 22, height=25, units = "cm", res=300)
+  
+  grid.arrange(
+    grobs = plotlist,
+    # widths = c(2, 1, 1),
+    layout_matrix = rbind(c(1),
+                          c(2),
+                          c(3))
+
+  )
+  dev.off()
+  

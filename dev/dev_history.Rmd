@@ -1,0 +1,521 @@
+---
+title: "Making the downcaleLST.MDV package"
+author: "Maite Lezama Valdes"
+date: "11.07.21"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, setup_wd, include=FALSE}
+knitr::opts_knit$set(root.dir = '../')
+```
+
+```{r development, include=FALSE, warning=FALSE, message=FALSE}
+library(testthat)
+```
+
+
+Package was generated with the help of package fusen by Sébastien Rochette. 
+
+```{r description, eval=FALSE}
+# Describe your package
+fusen::fill_description(
+  pkg = here::here(),
+  fields = list(
+    Title = "Downscaling Land Surface Temperature for the Antarctic Dry Valleys",
+    Description = "This package enables users to downscale MOD/MYD11_L2 scenes for daytime hours within the McMurdo Dry Valleys, Antarctica to a 30m spatial resolution",
+    `Authors@R` = c(
+      person("Maite", "Lezama Valdes", email = "maite.lezama@uni-muenster.de", role = c("aut", "cre"))
+    )
+  )
+)
+# Define License with use_*_license()
+usethis::use_mit_license("Maite Lezama Valdes")
+```
+
+# Read data
+
+The downscaling model contained in this package is called "final_model_downscaling_LST_MDV.RData". 
+
+Auxiliary raster data are in aux.tif and an exemplary MODIS scene to downscale is in MOD11_L2_example.tif, it's from XXX (ID=XXX).
+
+There is also a template file (template.tif) for the 30m resolution and slope.tif and aspect.tif (in degrees) to calculate the incidence angle.
+
+<!-- Store your dataset in a directory named "inst/" at the root of your project -->
+<!-- Use it for your tests in this Rmd thanks to `load_all()` to make it available
+and `system.file()` to read it in your examples 
+-->
+
+```{r development-2}
+# Run all in the console directly
+# Create "inst/" directory
+dir.create(here::here("inst"))
+# Example dataset
+# file.copy(system.file("nyc_squirrels_sample.csv", package = "fusen"), here::here("inst"))
+# Make your dataset file available to the current Rmd
+pkgload::load_all(path = here::here(), export_all = FALSE)
+# You will be able to read your example data file in each of your function examples and tests as follows
+
+# nyc_squirrels <- read.csv(datafile)
+```
+
+
+# make_ia: Calculate the incidence angle for the MODIS scene
+
+```{r function-make-ia}
+#' Calculate incidence angle for MODIS scene to be downscaled
+#'
+#' @param M_date MODIS scene capturing time in format POSIXct, UTC, just as in the MODIS filename
+#' @param outdir directory the incidence angle will be written to
+#' @param tmpdir directory for writing temporary raster files
+#' @param sl slope in degrees, full MDV file loadable via slope <- raster(system.file("30m_slopeMDV.tif", package = "downscaleLST.MDV"))
+#' @param as aspect in degrees, full MDV file loadable via aspect <- raster(system.file("30m_aspectMDV.tif", package = "downscaleLST.MDV")) 
+#' @param template template file in format raster
+#' @return
+#' Incidence Angle raster for the time the MODIS scene to be downscaled was captured
+#' @export
+#'
+#' @examples
+
+
+
+make_ia <- function(M_date, outdir, tmpdir = tempdir(),
+                    sl=slope, as=aspect, tmplt=template,
+                    writeRastertoOutdir=TRUE){
+  
+  raster::rasterOptions(tmpdir=tmpdir)
+  
+  print(paste0("starting with ia generation for ",M_date))
+  
+  doy <- lubridate::yday(M_date)
+  h <- lubridate::hour(M_date)
+  min <- lubridate::minute(M_date)
+  
+  doymin <- as.numeric(doy)+((h+min/60)/24)
+  
+  dateaschar <- gsub(gsub(substring(as.character(M_date), 1,16), pattern="\\s", replacement="_"), 
+       pattern=":", replacement="_")
+  
+  # check whether daylight saving applies
+  MODDateNZ <- lubridate::with_tz(M_date, tzone = "Pacific/Auckland")
+  if(lubridate::dst(MODDateNZ)==TRUE){
+    dstnz <- 60
+  } else {
+    dstnz <- 0
+  }
+  
+  #  mean latitude and longitude for whole area of interest, i.e. lat=-77.45706,lon= 161.7673
+  lat <- (-77.45706)
+  lon <- 161.7673
+  ia <- solrad::Incidence(DOY = doymin, Lat=lat, Lon=lon, 
+                          SLon=180, DS=dstnz, 
+                          Slope = sl, Aspect = as)
+  
+  iares <- raster::resample(ia, tmplt)
+  names(iares) <- "ia"
+  rm(ia)
+  
+  if(writeRastertoOutdir==TRUE){
+    
+      raster::writeRaster(iares, paste0(outdir, "/ia_res", dateaschar, ".tif"), overwrite=T)
+      print(paste0("wrote ia", dateaschar,"to ", paste0(outdir, "/ia_res_", dateaschar, ".tif")))
+  }
+  
+  gc()
+
+  return(iares)
+  
+}
+
+```
+
+The example is based on a small extent, for which template, slope and aspect are provided in the package as "ex_temp.grd", "ex_slope.grd" and "ex_aspect.grd". They are prepared as follows: 
+
+
+For the full area of interest grid, call: 
+
+full <- raster(system.file("full_size_grids_all_layers.grd", package = "downscaleLST.MDV"))
+ex <- raster(system.file("ex_2_all_layers.grd", package = "downscaleLST.MDV"))
+
+
+```{r examples}
+
+exdate <- as.POSIXct("2018-11-12 13:50:00", tz="UTC")
+full <- raster::stack("inst/full_size_grids_all_layers.grd")
+ex2 <- raster::stack("inst/ex_2_all_layers.grd")
+
+# for the example extent
+ia <- make_ia(M_date = exdate, outdir = here::here("ex_day"), 
+              sl=ex2$slope, as=ex2$aspect, tmplt=ex2$template)
+# # for the full scene
+# ia <- make_ia(M_date = exdate, outdir = here::here("ex_day"), 
+#               sl=full$slope, as=full$aspect, tmplt=full$template)
+
+
+```
+
+```{r tests}
+# test_that("my_median works properly and show error if needed", {
+#   expect_true(my_median(1:12) == 6.5)
+#   expect_error(my_median("text"))
+# })
+```
+
+
+# downscaleFun: Downscale MODIS scene 
+
+```{r function-downscale}
+
+#' Downscale MODIS scene
+#'
+#' @param MOD MODIS scene in format raster, will be resampled to template resolution in case it is not already provided as such
+#' @param aux auxiliary data in format raster stack as provided by package as aux.grd
+#' @param ia incidence angle in format raster as generated by make_ia() 
+#' @param template template in format raster as provided by package as template.grd
+#' @param modname character, containing the first part of the MODIS scene name at least to derive whether the scene stems from Aqua or Terra satellite 
+#' @param outformat default is ".grd" but could also be ".tif" 
+#' @param add character, for an additional suffix to the outfile name in order to mark e.g. smaller extens
+#' @return
+#' downscaled MODIS LST at 30m resolution 
+#' @export
+#'
+#' @examples
+
+downscaleFun <- function(MOD, ia, modname, aux=aux, template=template,
+                         writeRastertoOutdir=TRUE, outdir, add=NULL, outformat=".grd"){
+  
+      if(any(raster::res(MOD) != 30)){
+        MOD <- resample(MOD, template, method="bilinear")
+      }
+      
+      TeAqNum <- template
+  
+      if(grepl("MYD",modname)){
+            TeAqNum[] <- 1
+            # TeAqNum[1] <- 2
+            # TA <- 1
+            # corr <- 1
+          } else {
+            TeAqNum[] <- 2
+            # TeAqNum[1] <- 1
+            # TA = 2
+            # corr <- 2
+      
+          }
+      names(TeAqNum) <- "TeAqNum"
+          
+      
+      # start putting a predictor stack together
+      takeaux <- which(names(aux) %in% model_final$finalModel$xNames )
+      aux <- aux[[takeaux]]
+      names(aux)
+      
+      predstack <- raster::stack(MOD, aux, ia, TeAqNum)
+      
+      # prediction is performed on data.frame due to formatting in the model training data
+      predstackdf <- data.frame(predstack[])
+      predstackdf$soilraster <- factor(predstackdf$soilraster)
+      predstackdf$TeAqNum <- factor(predstackdf$TeAqNum)
+      predstackdf$landcoverres <- factor(predstackdf$landcoverres)
+      names(predstackdf) <- c("Modis", names(predstackdf[2:length(names(predstackdf))]))
+      predstackdf <- predstackdf[,model_final$finalModel$xNames] # order columns
+      
+      # bring new data into trainingData form
+      trained_with <- model_final$trainingData[,1:(ncol(model_final$trainingData)-1)]
+      if(any(!levels(predstackdf$soilraster)  %in% levels(trained_with$soilraster))){
+        notintrainlevels <- levels(predstackdf$soilraster)[which(!levels(predstackdf$soilraster) %in% levels(trained_with$soilraster))]
+        remove <- predstackdf$soilraster[predstackdf$soilraster %in% notintrainlevels]
+        predstackdf$soilraster[predstackdf$soilraster %in% notintrainlevels] <- NA
+        predstackdf$soilraster <- droplevels(predstackdf$soilraster)
+        print(levels(predstackdf$soilraster))
+        print("because these soil factor levels were not within the training boundaries, the following samples will be set to NA")
+        print(table(droplevels(remove)))
+      }
+      
+      compcaseloc <- which(complete.cases(predstackdf))
+      predstackdf_comp <- predstackdf[complete.cases(predstackdf),]
+      
+
+      # to equalize classes of training and test set as suggested in  https://stackoverflow.com/questions/24829674/r-random-forest-error-type-of-predictors-in-new-data-do-not-match 
+      predstackdf_comp <- rbind(trained_with[1, ] , predstackdf_comp)
+      predstackdf_comp <- predstackdf_comp[-1,]
+
+      pred <- predict(model_final, predstackdf_comp)
+      
+      allpix <- predstack$TeAqNum[]
+      allpix <- NA
+      allpix[compcaseloc] <- pred
+      
+      pred <- predstack$dem
+      names(pred) <- "downscaled"
+      pred[] <- allpix
+      
+      if(writeRastertoOutdir==TRUE){
+              raster::writeRaster(pred, paste0(outdir, "dsc_", modname, add, outformat),
+                          overwrite=T)
+      }
+      return(pred)
+}
+
+
+```
+
+
+```{r examples-downscale}
+library(raster)
+library(lubridate)
+library(solrad)
+library(downscaleLST.MDV)
+
+
+exdate <- as.POSIXct("2018-11-12 13:50:00", tz="UTC")
+ex2 <- raster::stack("inst/ex_2_all_layers.grd")
+
+##########  load the model ###############################################
+load(system.file("final_model_downscaling_LST_MDV.RData", package = "downscaleLST.MDV"))
+
+##########  make ia and put into one stack  ###############################
+ia_ex2 <- make_ia(M_date = exdate, outdir = here::here("ex_output"),
+                     sl=ex2$slope, as=ex2$aspect, tmplt=ex2$template)
+names(ia_ex2) <- "ia"
+ex2_ia <- raster::stack(ex2, ia_ex2)
+
+
+dsc_ex2 <- downscaleFun(MOD=ex2_ia$Mbilin,
+                        aux=ex2_ia[[c( "dem","slope","aspect","soilraster","landcoverres")]],
+                        ia=ex2_ia$ia, 
+                        template=ex2_ia$template, 
+                        modname="MYD11_L2.A2018316.1350.006",
+                        outdir = "ex_output/",
+                        writeRastertoOutdir = TRUE,
+                        add="_ex2",
+                        outformat=".grd")
+
+comp_ex2 <- raster::stack(ex2$Mbilin, ex2$Mngb, dsc_ex2, ex2$L)
+raster::writeRaster(comp_ex2, "inst/comp_ex2.grd",overwrite=T)
+
+```
+
+# make_dsc_figure: Make a figure for comparing MODIS to downscaled and reference scene
+
+```{r function-figure}
+#' make a figure for comparing MODIS to downscaled and reference scene
+#'
+#' this function was adapted from ggAOA by Ludwigm6 https://github.com/Ludwigm6/mlutils/blob/b8fab319f8054df6bb4595bd8241a2d50c7753e3/R/plot_aoa.R
+#' @param LST raster stack containing either MODIS and downscaled MODIS scene or the same plus a reference scene, preferably in this order, will be named by layer names
+#' @param ex list containing extents that shall be plotted into the overview of the scene and displayed in a zoomed form below 
+#' @param c character string with R colours names to use for smaller extent headings and boxes in main figure, should be same length as list in ex
+#' @return
+#' 
+#' @export
+#'
+#' @examples
+
+make_dsc_figure = function(LST, aoa=NULL, LST_name = "LST", ex=NULL, c=NULL,
+                 limlow=min(LST[],na.rm=T), limhigh=max(LST[],na.rm=T),
+                 legendposition="right",exsize=1, limitx=NULL, limity=NULL){
+  
+  if(!is.null(aoa)){
+    # mask aoa
+    aoa[aoa == 1] = NA
+    
+    base <- RStoolbox::ggR(LST, geom_raster = TRUE)+
+      ggplot2::scale_fill_gradientn(name = LST_name, colors = viridis::inferno(50),
+                                    na.value="transparent",
+                                    limits=c(limlow,limhigh))+
+      ggnewscale::new_scale_fill()+
+      RStoolbox::ggR(aoa, ggLayer = TRUE, forceCat = TRUE, 
+                     geom_raster = TRUE, alpha = NA)+
+      ggplot2::scale_fill_manual(name = "Out of AOA", 
+                                 values = c("0" = "grey70"), 
+                                 na.value = "transparent")+
+      ggplot2::coord_equal(expand = FALSE,xlim = limitx, ylim=limity)+
+      ggplot2::scale_y_continuous(n.breaks=3)+
+      ggplot2::scale_x_continuous(n.breaks=3)+
+      theme_map()+ggplot2::theme(legend.position=legendposition)
+    
+  } else {
+    base <- RStoolbox::ggR(LST, geom_raster = TRUE)+
+      ggplot2::scale_fill_gradientn(name = LST_name, colors = viridis::inferno(50),
+                                    na.value="transparent",
+                                    limits=c(limlow,limhigh))+
+      ggplot2::coord_equal(expand = FALSE, xlim = limitx, ylim=limity)+
+      ggplot2::scale_y_continuous(n.breaks=3)+
+      ggplot2::scale_x_continuous(n.breaks=3)+
+      theme_map()+ggplot2::theme(legend.position=legendposition)
+  }
+  
+
+  
+    if(!is.null(ex)){ # if extents are supplied, make subplot and extents 
+  
+    
+    explotlist <- lapply(seq(ex), function(i){
+      ggplot2::geom_polygon(data=data.frame(x=c(raster::extent(ex[[i]])[c(1,1)], raster::extent(ex[[i]])[c(2,2)]),
+                                   y=c(raster::extent(ex[[i]])[3:4], raster::extent(ex[[i]])[c(4,3)])),
+                   aes(x = x, y = y), colour = c[i], fill=NA, size = exsize)
+    })
+    
+    base <- base+explotlist
+    
+    } 
+  
+  return(base)
+}
+
+
+theme_map = function(y90 = TRUE, ts=10){
+  t = ggplot2::theme_void()+
+    ggplot2::theme(axis.line =  ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    axis.text = ggplot2::element_text(color = "black", size = ts),
+    axis.ticks =  ggplot2::element_blank(),
+    panel.grid = ggplot2::element_blank(),
+    panel.border =  ggplot2::element_blank(),
+    panel.background = ggplot2::element_rect(fill = "white"),
+    legend.position = "right")
+  
+  if(y90){
+    t = t + ggplot2::theme(axis.text.y = ggplot2::element_text(angle = 90, hjust = 0.5))
+  }
+  
+  
+  return(t)
+}
+
+```
+
+
+
+```{r examples-figure}
+library(rasterVis)
+library(sf)
+library(viridis)
+library(gridExtra)
+
+
+comp_ex2 <- raster::stack("inst/comp_ex2.grd") # from example for downscaleFun
+
+aoa <- raster::raster(list.files("inst/", pattern="AOA", full.names = T))
+
+# this is the result of applying the 
+aoa_ex2 <- raster::crop(aoa, comp_ex2)
+aoa_ex2[aoa_ex2 == 1] = NA # set pixels that are within AOA to NA so  they don't overlap valid LST data
+
+ex2 <- raster::stack(comp_ex2[[2:4]], aoa_ex2)
+names(ex2) <- c("MODIS_LST", "downscaled_LST","Landsat_LST", "AOA")
+
+# # stack original LST, downscaled LST and reference LST 
+# M_dsc_L_stack <- raster::stack(full$Mngb, dsc_M, full$L, aoa)
+
+# ex2 <- crop(M_dsc_L_stack, extent(dsc_ex2))
+
+############### PLOTTING ###################################################
+# 
+# ### full scene ################
+# dscplot <- make_dsc_figure(LST = M_dsc_L_stack$downscaled_LST,  LST_name = "LST",
+#                  aoa=M_dsc_L_stack$AOA, ex=list(ex2, ex4), c=c("navy","chartreuse4"), 
+#                  limlow = -40, limhigh = 0, exsize = 1.5, 
+#                  limitx = c(350500, 500000), limity = c(-1400000, -1200000),legendposition = "none"
+#                  )
+# mplot <- make_dsc_figure(LST = M_dsc_L_stack$MODIS_LST,  LST_name = "MODIS LST",
+#                  ex=list(ex2, ex4), c=c("navy","chartreuse4"), 
+#                  limlow = -40, limhigh = 0, exsize = 1.5, 
+#                  limitx = c(350500, 500050), limity = c(-1400050, -1200000),legendposition = "none"
+#                )
+# lplot <- make_dsc_figure(LST = M_dsc_L_stack$Landsat_LST,  LST_name = "Landsat LST",
+#                ex=list(ex2, ex4), c=c("navy","chartreuse4"), 
+#                limlow = -40, limhigh = 0, exsize = 1.5, 
+#                limitx = c(350500, 500050), limity = c(-1400050, -1200000),legendposition = "none"
+# )
+# 
+# plotlist <- list(mplot, dscplot, lplot)
+# 
+# margin = theme(plot.margin = unit(c(0.7,0.7,0.4,0.4), "cm"))
+# 
+# # png(paste0(figurepath, "full_example_scene_with_aoa.png"),
+# #     units="cm", width=21, height=9, res=300)
+# grid.arrange(
+#   grobs = lapply(plotlist, "+", margin),
+#   layout_matrix = rbind(c(1,2,3)))
+# # dev.off()
+
+
+
+### example 2 #################
+library(ggplot2)
+margin = ggplot2::theme(plot.margin = unit(c(0.4,0.4,0.4,0.4), "cm"))
+
+dscplot <- make_dsc_figure(LST = ex2$downscaled_LST,  LST_name = "LST",
+                 aoa=ex2$AOA, ex=list(ex2), c=c("navy"), 
+                 limlow = -26, limhigh = -3, legendposition = "none",
+                 exsize = 4)
+
+mplot <- make_dsc_figure(LST = ex2$MODIS_LST,  LST_name = "MODIS LST",
+               limlow = -26, limhigh = -3,ex=list(ex2), c=c("navy"), legendposition = "none",
+               exsize = 4)
+
+lplot <- make_dsc_figure(LST = ex2$Landsat_LST,  LST_name = "Landsat LST",
+               limlow = -26, limhigh = -3,ex=list(ex2), c=c("navy"), legendposition = "none",
+               exsize = 4)
+
+plotlist <- list(mplot, dscplot, lplot)
+
+
+gridExtra::grid.arrange(
+  grobs = lapply(plotlist, "+", margin),
+  layout_matrix = rbind(c(1,2,3)))
+dev.off()
+
+# with legend
+dscplot_with_legend <- make_dsc_figure(LST = ex2$downscaled_LST,  LST_name = "LST",
+                 aoa=ex2$AOA, ex=list(ex2), c=c("navy"), 
+                 limlow = -26, limhigh = -3,
+                 exsize = 2)
+
+dscplot_with_legend
+```
+
+
+## To do: 
+
+* Make function that gets recent scenes or specific scenes from MOD/MYD and warps all alone.
+* implement tests 
+
+
+```{r tests-1}
+# test_that("my_median works properly and show error if needed", {
+#   expect_true(my_other_median(1:12) == 6.5)
+#   expect_error(my_other_median("text"))
+# })
+```
+
+# There can be development actions
+
+These will be included in the `dev_history.R` file of your package, but won't be direct part of it.
+
+- open project
+- remove vignettes
+- run
+
+```{r development-1, eval=FALSE}
+# Run but keep eval=FALSE to avoid infinite loop
+# Execute in the console directly
+
+vf <- list.files(here::here("vignettes"), full.names=T)
+file.remove(vf)
+fusen::inflate(rmd = "dev/dev_history.Rmd",name = "How_to_use_downscaleLST.MDV", check = TRUE)
+```
+
+
+# Inflate your package
+
+You're one inflate from paper to box.
+Build your package from this very Rmd using `fusen::inflate()`
+
+- Verify your `"DESCRIPTION"` file has been updated
+- Verify your function is in `"R/"` directory
+- Verify your test is in `"tests/testthat/"` directory
+- Verify this Rmd appears in `"vignettes/"` directory
+

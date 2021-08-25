@@ -1,0 +1,35 @@
+Package: downscaleLST.MDV
+Title: Downscaling Land Surface Temperature for the Antarctic Dry Valleys
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Maite",
+           family = "Lezama Valdes",
+           role = c("aut", "cre"),
+           email = "maite.lezama@uni-muenster.de")
+Description: This package enables users to downscale MOD/MYD11_L2 scenes
+    for daytime hours within the McMurdo Dry Valleys, Antarctica to a 30m
+    spatial resolution
+License: MIT + file LICENSE
+Imports: 
+    ggnewscale,
+    ggplot2,
+    lubridate,
+    raster,
+    RStoolbox,
+    solrad,
+    stats,
+    viridis
+Suggests: 
+    gridExtra,
+    here,
+    knitr,
+    rasterVis,
+    rmarkdown,
+    sf,
+    testthat
+VignetteBuilder: 
+    knitr
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.1
