@@ -128,3 +128,8 @@ gridExtra::grid.arrange(
 The grey areas within the downscaled scene are pixels that are outside
 of the Area of Applicability (AOA) [Meyer, Pebesma
 2021](https://doi.org/10.1111/2041-210X.13650) of the model.
+
+## Coming soon
+
+In the future functions to download MODIS data directly and to calculate
+the AOA per downscaled scene will be added.
