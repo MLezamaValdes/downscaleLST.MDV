@@ -149,17 +149,10 @@ ex2 <- raster::stack("inst/ex_2_all_layers.grd")
 ia <- make_ia(M_date = exdate, outdir = here::here("ex_day"), 
               sl=ex2$slope, as=ex2$aspect, tmplt=ex2$template)
 # # for the full scene
-# ia <- make_ia(M_date = exdate, outdir = here::here("ex_day"), 
+# ia <- make_ia(M_date = exdate, outdir = here::here("ex_day"),
 #               sl=full$slope, as=full$aspect, tmplt=full$template)
 
 
-```
-
-```{r tests}
-# test_that("my_median works properly and show error if needed", {
-#   expect_true(my_median(1:12) == 6.5)
-#   expect_error(my_median("text"))
-# })
 ```
 
 
@@ -483,13 +476,6 @@ dscplot_with_legend
 * Make function that gets recent scenes or specific scenes from MOD/MYD and warps all alone.
 * implement tests 
 
-
-```{r tests-1}
-# test_that("my_median works properly and show error if needed", {
-#   expect_true(my_other_median(1:12) == 6.5)
-#   expect_error(my_other_median("text"))
-# })
-```
 
 # There can be development actions
 
